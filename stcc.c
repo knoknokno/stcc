@@ -5,6 +5,8 @@
 #include <stdlib.h>
 #include <string.h>
 
+char* user_input;
+
 typedef enum {
     TK_RESEVERD,
     TK_NUM,
@@ -30,6 +32,19 @@ void error(char* fmt, ...) {
     exit(1);
 }
 
+void error_at(char* loc, char* fmt, ...) {
+    va_list ap;
+    va_start(ap, fmt);
+
+    int pos = loc - user_input;
+    fprintf(stderr, "%s\n", user_input);
+    fprintf(stderr, "%*s", pos, " ");
+    fprintf(stderr, "^ ");
+    vfprintf(stderr, fmt, ap);
+    fprintf(stderr, "\n");
+    exit(1);
+}
+
 bool consume(char op) {
     if (token->kind != TK_RESEVERD || token->str[0] != op) {
         return false;
@@ -40,14 +55,14 @@ bool consume(char op) {
 
 void expect(char op) {
     if (token->kind != TK_RESEVERD || token->str[0] != op) {
-        error("%cではありません", op);
+        error_at(token->str, "%cではありません", op);
     }
     token = token->next;
 }
 
 int expect_number() {
     if (token->kind != TK_NUM) {
-        error("数ではありません");
+        error_at(token->str, "数ではありません");
     }
     int val = token->val;
     token = token->next;
@@ -99,7 +114,8 @@ int main(int argc, char** argv) {
     return 1;
   }
 
-  token = tokenize(argv[1]);
+  user_input = argv[1];
+  token = tokenize(user_input);
 
   printf(".intel_syntax noprefix\n");
   printf(".globl main\n");
