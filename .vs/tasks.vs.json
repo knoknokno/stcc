@@ -1,0 +1,10 @@
+{
+  "version": "0.2.1",
+  "tasks": [
+    {
+      "taskLabel": "\u30BF\u30B9\u30AF-main",
+      "appliesTo": "main.c",
+      "type": "launch"
+    }
+  ]
+}

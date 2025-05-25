@@ -1,53 +1,6 @@
-#include <ctype.h>
-#include <stdarg.h>
-#include <stdbool.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
+#include "stcc.h"
 
-
-char* user_input;
-
-void error(char* fmt, ...) {
-    va_list ap;
-    va_start(ap, fmt);
-    vfprintf(stderr, fmt, ap);
-    fprintf(stderr, "\n");
-    exit(1);
-}
-
-void error_at(char* loc, char* fmt, ...) {
-    va_list ap;
-    va_start(ap, fmt);
-
-    int pos = loc - user_input;
-    fprintf(stderr, "%s\n", user_input);
-    fprintf(stderr, "%*s", pos, " ");
-    fprintf(stderr, "^ ");
-    vfprintf(stderr, fmt, ap);
-    fprintf(stderr, "\n");
-    exit(1);
-}
-
-//==========Token==========
-
-typedef enum {
-    TK_RESEVERD,
-    TK_NUM,
-    TK_EOF,
-} TokenKind;
-
-typedef struct Token Token;
-
-struct Token {
-    TokenKind kind;
-    Token* next;
-    int val;
-    char* str;
-    int len;
-};
-
-Token* token;
+//==========Tokenizer==========
 
 bool consume(char* op) {
     if (token->kind != TK_RESEVERD ||
@@ -59,18 +12,27 @@ bool consume(char* op) {
     return true;
 }
 
+Token* consume_ident() {
+    if (token->kind != TK_IDENT) {
+        return NULL;
+    }
+    Token* tok = token;
+    token = token->next;
+    return tok;
+}
+
 void expect(char* op) {
     if (token->kind != TK_RESEVERD ||
         strlen(op) != token->len ||
         memcmp(token->str, op, token->len)) {
-        error_at(token->str, "%sではありません", op);
+        error_at(token->str, " is not %s", op);
     }
     token = token->next;
 }
 
 int expect_number() {
     if (token->kind != TK_NUM) {
-        error_at(token->str, "数ではありません");
+        error_at(token->str, "is not num");
     }
     int val = token->val;
     token = token->next;
@@ -78,7 +40,7 @@ int expect_number() {
 }
 
 bool at_eof() {
-    return token->kind == EOF;
+    return token->kind == TK_EOF;
 }
 
 Token* new_token(TokenKind kind, Token* cur, char* str, int len) {
@@ -105,13 +67,17 @@ Token* tokenize(char* p) {
             continue;
         }
         else if (startswith(p, "==") || startswith(p, "!=") ||
-                 startswith(p, "<=") || startswith(p, ">=")) {
+            startswith(p, "<=") || startswith(p, ">=")) {
             cur = new_token(TK_RESEVERD, cur, p, 2);
             p += 2;
             continue;
         }
-        else if (strchr("+-*/()<>", *p)) {
+        else if (strchr("+-*/()<>=;", *p)) {
             cur = new_token(TK_RESEVERD, cur, p++, 1);
+        }
+        else if ('a' <= *p && *p <= 'z') {
+            cur = new_token(TK_IDENT, cur, p++, 1);
+            continue;
         }
         else if (isdigit(*p)) {
             cur = new_token(TK_NUM, cur, p, 0);
@@ -121,7 +87,7 @@ Token* tokenize(char* p) {
             continue;
         }
         else {
-            error("トークナイズできません");
+            error("can't tokenize");
         }
     }
 
@@ -129,34 +95,20 @@ Token* tokenize(char* p) {
     return head.next;
 }
 
-//==========Node==========
-
-typedef enum {
-    ND_ADD,
-    ND_SUB,
-    ND_MUL,
-    ND_DIV,
-    ND_EQ,
-    ND_NE,
-    ND_LT,
-    ND_LE,
-    ND_NUM
-} NodeKind;
-
-typedef struct Node Node;
-
-struct Node {
-    NodeKind kind;
-    Node* lhs;
-    Node* rhs;
-    int val;
-};
+//==========Node parser==========
 
 Node* new_node(NodeKind kind, Node* lhs, Node* rhs) {
     Node* node = calloc(1, sizeof(Node));
     node->kind = kind;
     node->lhs = lhs;
     node->rhs = rhs;
+    return node;
+}
+
+Node* new_node_lvar(int offset) {
+    Node* node = calloc(1, sizeof(Node));
+    node->kind = ND_LVAR;
+    node->offset = offset;
     return node;
 }
 
@@ -167,16 +119,31 @@ Node* new_node_num(int val) {
     return node;
 }
 
-Node* expr();
-Node* equality();
-Node* rerational();
-Node* add();
-Node* mul();
-Node* unary();
-Node* primary();
+void program() {
+    int i = 0;
+    while (!at_eof()) {
+        code[i++] = stmt();
+    }
+    code[i] = NULL;
+
+}
+
+Node* stmt() {
+    Node* node = expr();
+    expect(";");
+    return node;
+}
 
 Node* expr() {
-    return equality();
+    return assign();
+}
+
+Node* assign() {
+    Node* node = equality();
+    if (consume("=")) {
+        node = new_node(ND_ASSIGN, node, assign());
+    }
+    return node;
 }
 
 Node* equality() {
@@ -267,81 +234,14 @@ Node* primary() {
         expect(")");
         return node;
     }
+
+    Token* tok = consume_ident();
+    if (tok) {
+        Node* node = new_node_lvar((tok->str[0] - 'a' + 1) * 8);
+        return node;
+    }
     else {
         return new_node_num(expect_number());
     }
 }
 
-void gen(Node* node) {
-    if (node->kind == ND_NUM) {
-        printf("  push %d\n", node->val);
-        return;
-    }
-
-    gen(node->lhs);
-    gen(node->rhs);
-
-    printf("  pop rdi\n");
-    printf("  pop rax\n");
-
-    switch (node->kind) {
-    case ND_ADD:
-        printf("  add rax, rdi\n");
-        break;
-    case ND_SUB:
-        printf("  sub rax, rdi\n");
-        break;
-    case ND_MUL:
-        printf("  imul rax, rdi\n");
-        break;
-    case ND_DIV:
-        printf("  cqo\n");
-        printf("  idiv rdi\n");
-        break;
-    case ND_EQ:
-        printf("  cmp rax, rdi\n");
-        printf("  sete al\n");
-        printf("  movzb rax, al\n");
-        break;
-    case ND_NE:
-        printf("  cmp rax, rdi\n");
-        printf("  setne al\n");
-        printf("  movzb rax, al\n");
-        break;
-    case ND_LT:
-        printf("  cmp rax, rdi\n");
-        printf("  setl al\n");
-        printf("  movzb rax, al\n");
-        break;
-    case ND_LE:
-        printf("  cmp rax, rdi\n");
-        printf("  setle al\n");
-        printf("  movzb rax, al\n");
-        break;
-    }
-
-    printf("  push rax\n");
-}
-
-int main(int argc, char** argv) {
-  if (argc != 2) {
-    error("引数の個数が正しくありません\n");
-    return 1;
-  }
-
-  user_input = argv[1];
-  token = tokenize(user_input);
-  Node* node = expr();
-
-  // アセンブリの前半部分を出力
-  printf(".intel_syntax noprefix\n");
-  printf(".globl main\n");
-  printf("main:\n");
-
-  gen(node);
-
-  // スタックトップにある式全体の値をRAXにロードして返り値とする
-  printf("pop rax\n");
-  printf("  ret\n");
-  return 0;
-}
