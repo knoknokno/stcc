@@ -7,7 +7,8 @@
 
 // ==========Token==========
 typedef enum {
-    TK_RESEVERD,
+    TK_RESERVED,
+    TK_RETURN,
     TK_IDENT,
     TK_NUM,
     TK_EOF,
@@ -23,16 +24,27 @@ struct Token {
     int len;
 };
 
+typedef struct LVar LVar;
+
+struct LVar {
+    LVar* next;
+    char* name;
+    int len;
+    int offset;
+};
+
 bool consume(char* op);
 void expect(char* p);
 int expect_number();
 bool at_eof();
 Token* new_token(TokenKind, Token*, char*, int);
 bool startswith(char*, char*);
-Token* tokenize();
+Token* tokenize(char* p);
+LVar* find_lvar(Token* tok);
 
 // ==========Node==========
 typedef enum {
+    ND_RETURN,
     ND_ADD,
     ND_SUB,
     ND_MUL,
@@ -84,3 +96,5 @@ extern char* user_input;
 extern Token* token;
 
 extern Node* code[100];
+
+extern LVar* locals;

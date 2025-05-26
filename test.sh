@@ -50,5 +50,6 @@ COMMENTOUT
 
 assert 1 "a = 1;"
 assert 3 "a = 1; b = 2; a + b;"
+assert 42 "ans = 42; return ans;"
 
 echo OK
